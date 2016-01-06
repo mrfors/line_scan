@@ -1,0 +1,548 @@
+# -*- coding: utf-8 -*-
+import sys
+import os
+
+
+class ScannerException(Exception):
+    def __init__(self, type, value):
+        Exception.__init__(self)
+        self.type = type
+        self.value = value
+
+class Scanner:
+    def __init__(self):
+        self.open_files()
+        self.char = ' '
+        self.list=[]
+        self.num_str = 1
+        self.errors = 0
+        self.SpecialWords = {
+            #равно, не равно, меньше, больше, меньше или равно, больше или равно
+            'eq': 'EQ', 'ne': 'NE', 'lt': 'LT',
+            'gt': 'GT', 'le': 'LE', 'ge': 'GE',
+
+            'start': 'Beg', 'stop': 'End',
+            #тип целое / действительное
+            'int': 'TypeInt', 'real': 'TypeReal',
+
+            'skip': 'Skip', 'space': "Space", 'tab': 'Tab',
+
+            'rem': 'Comment', 'rem\n': 'Comment',
+
+            'if': 'If', 'then': 'Then', 'else': 'Else',
+            'loop': 'Loop', 'break': 'Break', 'end': 'End',
+
+
+            'proc': 'Proc',
+
+
+            'plus': 'Add', 'minus': 'Min', 'mult': 'Mul',
+            'div': 'Div', 'mod': 'Mod', 'let': 'Let',
+
+            'goto': 'Goto',
+            'read': 'Read', 'write': 'Write',
+            'cast': 'Cast',
+        }
+        self.SpecialSymbols = {
+            '': 'eof',
+            '(': 'LRB', ')': 'RRB', '[': 'LSB', ']': 'RSB',
+            '{': 'LCB', '}': 'RCB',
+            ':': 'Colon', ',': 'Comma',
+            ';': 'Semicolon', '/': 'Comment'
+        }
+        self.IdentifiersLexemes = {
+            'id': 'Id',
+            'label': 'Label',
+            'declaring_variables.': 'Var',
+            'break': 'Break',
+            'field_procedure': 'Tools',
+            'of': 'Of, Or',
+            'do': 'Do',
+            'error': 'Error',
+            'int': 'Int', 'real': 'Real',
+        }
+
+        self.CharsAlphabet = ["_", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P",
+                              "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+                              "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q",
+                              "r", "s", "t", "u", "v", "w", "x", "y", "z"]
+
+        self.CharsNumSystem = {
+            'B': ['0', '1'],
+            '0': ["0", "1", "2", "3", "4", "5", "6", "7"],
+            '1': ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            'X': ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+                   "A", "B", "C", "D", "E", "F", "a", "b", "c", "d", "e", "f"]
+        }
+
+    def open_files(self):
+        if len(sys.argv) < 3:
+            print('Error:Params:', 'The number of parameters is not equal to 3')
+            sys.exit()
+        file_name_cod = sys.argv[1]
+        file_name_lexeme = sys.argv[2]
+
+        if not os.path.exists(file_name_cod):
+            print('Error:Params:', file_name_cod, ' File does not exist')
+            sys.exit(1)
+        self.source = open(file_name_cod, 'r')
+        self.result = open(file_name_lexeme, 'w')
+
+    def get_next_char(self):
+        self.char = self.source.read(1)#1-символ
+
+    def get_next_lexeme(self):
+        lexeme = {
+            'num_str': '',
+            'id': '',
+            'value': '',
+            'type': '',
+            'recognized_value': ''
+        }
+        try:
+            while self.char.isspace():
+                if self.char == '\n':
+                    self.num_str += 1
+                self.get_next_char()
+
+            if self.char == '':
+                lexeme['id'] = self.SpecialSymbols[self.char]
+                return lexeme
+
+            elif self.char in self.SpecialSymbols.keys():#проверка в ключах
+                if self.char == '/':
+                    value = self.char
+                    self.get_next_char()
+                    if self.char == '/':
+                        value += self.char
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.SpecialSymbols[self.char]
+                        lexeme['value'] =  value
+                        self.get_next_char()
+                        while self.char != '\n':
+                            if self.char == '\n':
+                                self.num_str += 1
+                            self.get_next_char()
+                        return lexeme
+                    raise ScannerException("Expected another slash", value)
+                lexeme['num_str'] = self.num_str
+                lexeme['id'] = self.SpecialSymbols[self.char]
+                lexeme['value'] = self.char
+                self.get_next_char()
+                return lexeme
+
+            elif self.char.isdigit():#проверка на число
+                value = ''
+                while self.char.isdigit():
+                    value += self.char
+                    self.get_next_char()
+                if self.char.isspace() or self.char in self.SpecialSymbols.keys():
+                    while self.char.isspace():
+                        self.get_next_char()
+                    if self.char == ":":
+                        value += self.char
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.IdentifiersLexemes['label']
+                        lexeme['value'] = value
+                        self.get_next_char()
+                        return lexeme
+                    fl = 0
+                    if self.char == '\n':
+                        fl = 1
+                        self.get_next_char()
+                        if self.char == ":":
+                            self.num_str += 1
+                            value += self.char
+                            lexeme['num_str'] = self.num_str
+                            lexeme['id'] = self.IdentifiersLexemes['label']
+                            lexeme['value'] = value
+                            self.get_next_char()
+                            return lexeme
+                            
+                    numb = int(value)
+                    check_numb2 = 4294967295
+                    if numb > check_numb2:
+                        raise ScannerException("Overflow", value)
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['int']
+                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                    lexeme['recognized_value'] = str(int(value, 10))
+                    lexeme['value'] = value
+                    return lexeme
+                    
+                if self.char == 'X':# hex
+                    if not (value == '0'):
+                        raise ScannerException("Incorrect notation", value)
+                        # ошибку о не правильной системе счисления
+                    self.get_next_char()
+                    
+                    notation = 'X'
+                    
+                    value = ''
+                    
+                    while not self.char.isspace() and self.char != '':
+                        
+                        if self.char not in self.CharsNumSystem[notation]:
+                            if self.char in self.SpecialSymbols.keys() and len(value)!=0:
+                                if self.char == ":":
+                                    
+                                    lexeme['num_str'] = self.num_str
+                                    lexeme['id'] = self.IdentifiersLexemes['label']
+                                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                    lexeme['recognized_value'] = str(int(value, 16))
+                                    value += self.char
+                                    lexeme['value'] = '0' + 'X' + value #
+                                    self.get_next_char()
+                                    return lexeme
+                                fl = 0
+                                if self.char == '\n':
+                                    fl = 1
+                                    self.get_next_char()
+                                    if self.char == ":":
+                                        self.num_str += 1
+                                        value += self.char
+                                        lexeme['num_str'] = self.num_str
+                                        lexeme['id'] = self.IdentifiersLexemes['label']
+                                        lexeme['value'] = value
+                                        self.get_next_char()
+                                        return lexeme
+                                lexeme['num_str'] = self.num_str
+                                lexeme['id'] = self.IdentifiersLexemes['int']
+                                lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                lexeme['recognized_value'] = str(int(value, 16))
+                                lexeme['value'] = '0' + 'X' + value #
+                                return lexeme
+                            raise ScannerException("Number expected", '0' + 'X' + value) #
+                        value += self.char
+                        self.get_next_char()
+                    if value == '':
+                        raise ScannerException("Expected numeric string", '0' + 'X' + value) #
+                    fl = 0
+                    while self.char.isspace():
+                        self.get_next_char()
+                    if self.char == '\n':
+                        fl = 1
+                        self.get_next_char()
+                        if self.char == ":":
+                            self.num_str += 1
+                            value += self.char
+                            lexeme['num_str'] = self.num_str
+                            lexeme['id'] = self.IdentifiersLexemes['label']
+                            lexeme['value'] = value
+                            self.get_next_char()
+                            return lexeme
+                    if self.char == ":":
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.IdentifiersLexemes['label']
+                        lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                        lexeme['recognized_value'] = str(int(value, 16))
+                        value += self.char
+                        lexeme['value'] = '0' + 'X' + value #
+                        self.get_next_char()
+                        return lexeme
+                    numb = int(value, int(notation))
+                    check_numb2 = 4294967295
+                    if numb > check_numb2:
+                        raise ScannerException("Overflow", value)
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['int']
+                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                    lexeme['recognized_value'] = str(int(value, 16))
+                    lexeme['value'] = '0' + 'X' + value #
+                    if fl == 1:
+                        self.num_str += 1
+                    return lexeme
+                
+                
+                if self.char == 'B':# bin
+                    if not (value == '0'):
+                        raise ScannerException("Incorrect notation", value)
+                        # ошибку о не правильной системе счисления
+                    self.get_next_char()
+                    
+                    notation = 'B'
+                    
+                    value = ''
+                    
+                    while not self.char.isspace() and self.char != '':
+                        
+                        if self.char not in self.CharsNumSystem[notation]:
+                            if self.char in self.SpecialSymbols.keys() and len(value)!=0:
+                                if self.char == ":":
+                                    
+                                    lexeme['num_str'] = self.num_str
+                                    lexeme['id'] = self.IdentifiersLexemes['label']
+                                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                    lexeme['recognized_value'] = str(int(value, 2))
+                                    value += self.char
+                                    lexeme['value'] = '0' + 'B' + value #
+                                    self.get_next_char()
+                                    return lexeme
+                                fl = 0
+                                if self.char == '\n':
+                                    fl = 1
+                                    self.get_next_char()
+                                    if self.char == ":":
+                                        self.num_str += 1
+                                        value += self.char
+                                        lexeme['num_str'] = self.num_str
+                                        lexeme['id'] = self.IdentifiersLexemes['label']
+                                        lexeme['value'] = value
+                                        self.get_next_char()
+                                        return lexeme
+                                lexeme['num_str'] = self.num_str
+                                lexeme['id'] = self.IdentifiersLexemes['int']
+                                lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                lexeme['recognized_value'] = str(int(value, 2))
+                                lexeme['value'] = '0' + 'B' + value #
+                                return lexeme
+                            raise ScannerException("Number expected", '0' + 'B' + value) #
+                        value += self.char
+                        self.get_next_char()
+                    if value == '':
+                        raise ScannerException("Expected numeric string", '0' + 'B' + value) #
+                    fl = 0
+                    while self.char.isspace():
+                        self.get_next_char()
+                    if self.char == '\n':
+                        fl = 1
+                        self.get_next_char()
+                        if self.char == ":":
+                            self.num_str += 1
+                            value += self.char
+                            lexeme['num_str'] = self.num_str
+                            lexeme['id'] = self.IdentifiersLexemes['label']
+                            lexeme['value'] = value
+                            self.get_next_char()
+                            return lexeme
+                    if self.char == ":":
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.IdentifiersLexemes['label']
+                        lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                        lexeme['recognized_value'] = str(int(value, 2))
+                        value += self.char
+                        lexeme['value'] = '0' + 'B' + value #
+                        self.get_next_char()
+                        return lexeme
+                    numb = int(value, int(notation))
+                    check_numb2 = 4294967295
+                    if numb > check_numb2:
+                        raise ScannerException("Overflow", value)
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['int']
+                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                    lexeme['recognized_value'] = str(int(value, 2))
+                    lexeme['value'] = '0' + 'B' + value #
+                    if fl == 1:
+                        self.num_str += 1
+                    return lexeme
+
+                if self.char == '0' or '1' or '2' or '3' or '4' or '5' or '6' or '7':# 8
+                    if not (value == '0'):
+                        raise ScannerException("Incorrect notation", value)
+                        # ошибку о не правильной системе счисления
+                    self.get_next_char()
+                    
+                    notation = '0'
+                    
+                    value = ''
+                    
+                    while not self.char.isspace() and self.char != '':
+                        
+                        if self.char not in self.CharsNumSystem[notation]:
+                            if self.char in self.SpecialSymbols.keys() and len(value)!=0:
+                                if self.char == ":":
+                                    
+                                    lexeme['num_str'] = self.num_str
+                                    lexeme['id'] = self.IdentifiersLexemes['label']
+                                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                    lexeme['recognized_value'] = str(int(value, 8))
+                                    value += self.char
+                                    lexeme['value'] = '0' + 'B' + value #
+                                    self.get_next_char()
+                                    return lexeme
+                                fl = 0
+                                if self.char == '\n':
+                                    fl = 1
+                                    self.get_next_char()
+                                    if self.char == ":":
+                                        self.num_str += 1
+                                        value += self.char
+                                        lexeme['num_str'] = self.num_str
+                                        lexeme['id'] = self.IdentifiersLexemes['label']
+                                        lexeme['value'] = value
+                                        self.get_next_char()
+                                        return lexeme
+                                lexeme['num_str'] = self.num_str
+                                lexeme['id'] = self.IdentifiersLexemes['int']
+                                lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                                lexeme['recognized_value'] = str(int(value, 8))
+                                lexeme['value'] = '0' + 'B' + value #
+                                return lexeme
+                            raise ScannerException("Number expected", '0' + 'B' + value) #
+                        value += self.char
+                        self.get_next_char()
+                    if value == '':
+                        raise ScannerException("Expected numeric string", '0' + 'B' + value) #
+                    fl = 0
+                    while self.char.isspace():
+                        self.get_next_char()
+                    if self.char == '\n':
+                        fl = 1
+                        self.get_next_char()
+                        if self.char == ":":
+                            self.num_str += 1
+                            value += self.char
+                            lexeme['num_str'] = self.num_str
+                            lexeme['id'] = self.IdentifiersLexemes['label']
+                            lexeme['value'] = value
+                            self.get_next_char()
+                            return lexeme
+                    if self.char == ":":
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.IdentifiersLexemes['label']
+                        lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                        lexeme['recognized_value'] = str(int(value, 8))
+                        value += self.char
+                        lexeme['value'] = '0' + 'B' + value #
+                        self.get_next_char()
+                        return lexeme
+                    numb = int(value, int(notation))
+                    check_numb2 = 4294967295
+                    if numb > check_numb2:
+                        raise ScannerException("Overflow", value)
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['int']
+                    lexeme['type'] = self.IdentifiersLexemes['int'].lower()
+                    lexeme['recognized_value'] = str(int(value, 8))
+                    lexeme['value'] = '0' + 'B' + value #
+                    if fl == 1:
+                        self.num_str += 1
+                    return lexeme
+
+                if self.char == '.':
+                    if len(value) != 1:
+                        raise ScannerException("Expected single digit", value)
+                        # Выбросить исключение "В вещественном числе, до точки должно быть только одно значение
+                    value += self.char
+                    self.get_next_char()
+                    fl = 0
+                    while self.char.isdigit():
+                        fl = 1
+                        value += self.char
+                        self.get_next_char()
+                    if fl == 0:
+                        raise ScannerException("Expected a numeric string", value)
+                    if self.char.lower() != 'e':
+                        # Исключение "Ожидается порядок"
+                        raise ScannerException("Expected order", value)
+                    value += self.char
+                    self.get_next_char()
+                    if self.char == '+' or self.char == '-':
+                        value += self.char
+                        self.get_next_char()
+                    if not self.char.isdigit():
+                        # Исключение "Ожидается числовая строка"
+                        raise ScannerException("Expected numeric string", value)
+                    while self.char.isdigit():
+                        value += self.char
+                        self.get_next_char()
+                    if not self.char.isspace() and self.char not in self.SpecialSymbols.keys():
+                        # Исключение "Ожидается пробел или специальный символ"
+                        raise ScannerException("Expected spaces or special characters", value)
+                    numb = float(value)
+                    check_numb1 = 3.4e-38
+                    check_numb2 = 3.4e+38
+                    if numb > check_numb2 or numb < check_numb1:
+                        raise ScannerException("Overflow", value)
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['real']
+                    lexeme['type'] = self.IdentifiersLexemes['real'].lower()
+                    lexeme['recognized_value'] = value
+                    lexeme['value'] = value
+                    return lexeme
+                #Исключение "Lexeme is not defined"
+                raise ScannerException("Lexeme is not defined", value)
+
+            elif self.char in self.CharsAlphabet:
+                value = ''
+                while self.char in self.CharsAlphabet:
+                    value += self.char
+                    self.get_next_char()
+                if self.char in self.SpecialSymbols.keys() or self.char.isspace():
+                    if value in self.SpecialWords.keys():
+                        lexeme['num_str'] = self.num_str
+                        lexeme['id'] = self.SpecialWords[value]
+                        lexeme['value'] = value
+                        return lexeme
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['id']
+                    lexeme['value'] = value
+                    #self.get_next_char()
+                    return lexeme
+
+                if self.char.isdigit():#проверка на идентификатор
+                    while self.char in self.CharsAlphabet or self.char.isdigit():
+                        value += self.char
+                        self.get_next_char()
+                    lexeme['num_str'] = self.num_str
+                    lexeme['id'] = self.IdentifiersLexemes['id']
+                    lexeme['value'] = value
+                    #self.get_next_char()
+                    return lexeme
+                raise ScannerException("Lexeme is not defined", value)
+            else:
+                value = ''
+                while not self.char.isspace() and self.char not in self.SpecialSymbols.keys():
+                    value += self.char
+                    self.get_next_char()
+                except_type = 'Lexeme is not defined'
+                raise ScannerException(except_type, value)
+
+        except ScannerException as ex:
+            self.errors += 1
+            while not self.char.isspace() and self.char not in self.SpecialSymbols.keys():
+                ex.value += self.char
+                self.get_next_char()
+            while self.char != '\n' and self.char != '':
+                self.get_next_char()
+            lexeme['num_str'] = self.num_str
+            lexeme['id'] = self.IdentifiersLexemes['error']
+            lexeme['value'] = ex.value
+            str_err = 'Error:' + str(self.num_str) + ':' + str(ex.value) + '\t' + str(ex.type)
+            print(str_err)
+            return lexeme
+
+
+    def lexeme_to_string(self, lexeme):
+        #self.dictionary_lex[lexeme['value']] = lexeme['num_str']
+        string = str(lexeme['num_str']) + '\tlex:' + str(lexeme['id'])
+        if lexeme['type'] != '':
+            string += '\t' + lexeme['type'] + ':' + lexeme['recognized_value']
+
+        #if lexeme['length'] != '':
+            #string += '\tlength:' + lexeme['length']
+        if lexeme['value'] != '':
+            string += '\tval:' + lexeme['value']
+        string += '\n'
+        return string
+
+    def scanner(self):
+
+        lexeme = self.get_next_lexeme()
+        while lexeme['id'] != self.SpecialSymbols['']:
+            self.list.append(lexeme)
+            lexeme_string = self.lexeme_to_string(lexeme)
+            self.result.write(lexeme_string)
+            lexeme = self.get_next_lexeme()
+        if self.errors == 0:
+            len_list = len(self.list)
+            #print('OK')
+            return self.list
+        else:
+            return False
+
+            #print(self.dictionary_lex)
+if __name__ == '__main__':
+    scanner = Scanner()
+    scanner.scanner()
